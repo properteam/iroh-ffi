@@ -119,7 +119,6 @@ macro_rules! from_iroh_err {
 
 from_iroh_err! {
     iroh::endpoint::BindError => IrohErrorKind::Bind,
-    iroh::endpoint::ConnectError => IrohErrorKind::Connect,
     iroh::endpoint::ConnectionError => IrohErrorKind::Connection,
     iroh::endpoint::AlpnError => IrohErrorKind::Alpn,
     iroh::endpoint::RemoteEndpointIdError => IrohErrorKind::InvalidInput,
@@ -136,6 +135,23 @@ from_iroh_err! {
     iroh_base::KeyParsingError => IrohErrorKind::KeyParsing,
     iroh_tickets::ParseError => IrohErrorKind::TicketParsing,
     n0_future::task::JoinError => IrohErrorKind::Internal,
+}
+
+/// A connect that ran out of time is a timeout: the remote never answered (asleep, offline, or out of reach). One
+/// the remote answered and turned away, or that failed here, stays `Connect`.
+impl From<iroh::endpoint::ConnectError> for IrohError {
+    fn from(value: iroh::endpoint::ConnectError) -> Self {
+        use iroh::endpoint::{ConnectError, ConnectingError, ConnectionError};
+        let timed_out = matches!(
+            &value,
+            ConnectError::Connection { source: ConnectionError::TimedOut, .. }
+                | ConnectError::Connecting {
+                    source: ConnectingError::ConnectionError { source: ConnectionError::TimedOut, .. },
+                    ..
+                }
+        );
+        Self::from_debug(if timed_out { IrohErrorKind::Timeout } else { IrohErrorKind::Connect }, value)
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq, uniffi::Error)]
